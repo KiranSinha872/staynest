@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import api, { getErrorMessage } from '../api/client.js';
 import { useAuth } from '../context/AuthContext.jsx';
-import { formatINR, nightsBetween } from '../utils/format.js';
+import { formatINR, nightsBetween, toLocalDateString } from '../utils/format.js';
 
 export default function BookingBox({ listing }) {
   const { user } = useAuth();
@@ -15,7 +15,30 @@ export default function BookingBox({ listing }) {
   const total = nights * listing.pricePerNight;
   const set = (key) => (e) => setForm({ ...form, [key]: e.target.value });
 
-  // TODO: the date inputs allow past dates - set a `min` attribute (see issue tracker).
+  const today = toLocalDateString();
+
+  const minCheckOut = (() => {
+    if (form.checkIn) {
+      const [y, m, d] = form.checkIn.split('-').map(Number);
+      const nextDay = new Date(y, m - 1, d);
+      nextDay.setDate(nextDay.getDate() + 1);
+      return toLocalDateString(nextDay);
+    }
+    const tomorrow = new Date();
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    return toLocalDateString(tomorrow);
+  })();
+
+  const handleCheckInChange = (e) => {
+    const newCheckIn = e.target.value;
+    const shouldResetCheckOut = form.checkOut && newCheckIn && form.checkOut <= newCheckIn;
+    setForm((prev) => ({
+      ...prev,
+      checkIn: newCheckIn,
+      checkOut: shouldResetCheckOut ? '' : prev.checkOut,
+    }));
+  };
+
   const book = async (e) => {
     e.preventDefault();
     if (!user) return navigate('/login', { state: { from: `/stays/${listing._id}` } });
@@ -44,11 +67,23 @@ export default function BookingBox({ listing }) {
       <div className="row">
         <label className="grow">
           Check-in
-          <input type="date" required value={form.checkIn} onChange={set('checkIn')} />
+          <input
+            type="date"
+            required
+            min={today}
+            value={form.checkIn}
+            onChange={handleCheckInChange}
+          />
         </label>
         <label className="grow">
           Check-out
-          <input type="date" required value={form.checkOut} onChange={set('checkOut')} />
+          <input
+            type="date"
+            required
+            min={minCheckOut}
+            value={form.checkOut}
+            onChange={set('checkOut')}
+          />
         </label>
       </div>
       <label>
