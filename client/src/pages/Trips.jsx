@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import api, { getErrorMessage } from '../api/client.js';
 import Loader from '../components/Loader.jsx';
@@ -8,6 +8,9 @@ export default function Trips() {
   const location = useLocation();
   const [bookings, setBookings] = useState(null);
   const [error, setError] = useState('');
+  const [bookingToCancel, setBookingToCancel] = useState(null);
+  const [cancelling, setCancelling] = useState(false);
+  const keepButtonRef = useRef(null);
 
   const load = () =>
     api
@@ -19,13 +22,32 @@ export default function Trips() {
     load();
   }, []);
 
-  // TODO: ask for confirmation before cancelling.
-  const cancel = async (id) => {
+  useEffect(() => {
+    if (!bookingToCancel) return;
+    keepButtonRef.current?.focus();
+
+    const handleKeyDown = (e) => {
+      if (e.key === 'Escape' && !cancelling) {
+        setBookingToCancel(null);
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [bookingToCancel, cancelling]);
+
+  const confirmCancel = async () => {
+    if (!bookingToCancel) return;
+    setCancelling(true);
     try {
-      await api.patch(`/bookings/${id}/cancel`);
+      await api.patch(`/bookings/${bookingToCancel._id}/cancel`);
+      setBookingToCancel(null);
       load();
     } catch (err) {
       setError(getErrorMessage(err));
+      setBookingToCancel(null);
+    } finally {
+      setCancelling(false);
     }
   };
 
@@ -54,12 +76,57 @@ export default function Trips() {
               <span className={`status status-${b.status}`}>{b.status}</span>
               <strong>{formatINR(b.totalPrice)}</strong>
               {['pending', 'confirmed'].includes(b.status) && (
-                <button className="btn btn-danger" onClick={() => cancel(b._id)}>Cancel</button>
+                <button className="btn btn-danger" onClick={() => setBookingToCancel(b)}>Cancel</button>
               )}
             </div>
           </div>
         ))}
       </div>
+
+      {bookingToCancel && (
+        <div
+          className="modal-backdrop"
+          onClick={() => {
+            if (!cancelling) setBookingToCancel(null);
+          }}
+        >
+          <div
+            className="modal"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="cancel-dialog-title"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 id="cancel-dialog-title">Cancel trip?</h3>
+            <p>
+              Are you sure you want to cancel your booking for{' '}
+              <strong>{bookingToCancel.listing?.title}</strong>?
+            </p>
+            <p className="muted small">
+              {formatDate(bookingToCancel.checkIn)} → {formatDate(bookingToCancel.checkOut)}
+            </p>
+            <div className="modal-actions">
+              <button
+                ref={keepButtonRef}
+                type="button"
+                className="btn btn-ghost"
+                onClick={() => setBookingToCancel(null)}
+                disabled={cancelling}
+              >
+                Keep booking
+              </button>
+              <button
+                type="button"
+                className="btn btn-danger"
+                onClick={confirmCancel}
+                disabled={cancelling}
+              >
+                Yes, cancel trip
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </section>
   );
 }
