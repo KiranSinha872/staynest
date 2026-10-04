@@ -24,14 +24,14 @@ export const getListings = asyncHandler(async (req, res) => {
 
 // GET /api/listings/mine (host)
 export const getMyListings = asyncHandler(async (req, res) => {
-  const listings = await Listing.find({ host: req.user._id }).sort({ createdAt: -1 });
+  const listings = await Listing.find({ host: req.user._id, isActive: true }).sort({ createdAt: -1 });
   res.json(listings);
 });
 
 // GET /api/listings/:id
 export const getListing = asyncHandler(async (req, res) => {
   const listing = await Listing.findById(req.params.id).populate('host', 'name avatar createdAt');
-  if (!listing) {
+  if (!listing || !listing.isActive) {
     res.status(404);
     throw new Error('Listing not found');
   }
@@ -69,8 +69,36 @@ export const updateListing = asyncHandler(async (req, res) => {
 // DELETE /api/listings/:id (owner host)
 export const deleteListing = asyncHandler(async (req, res) => {
   const listing = await findOwnedListing(req, res);
-  await listing.deleteOne();
-  // TODO: what should happen to existing bookings and reviews? See issue tracker.
+
+  // Treat an already-inactive listing the same as not found, so deleting twice is a 404.
+  if (!listing.isActive) {
+    res.status(404);
+    throw new Error('Listing not found');
+  }
+
+  // Block deletion when the listing has at least one upcoming confirmed booking.
+  // "Upcoming" means confirmed and checkOut is on or after the start of today
+  // (calendar-day boundary in UTC, so a stay ending today still counts).
+  const todayStart = new Date();
+  todayStart.setUTCHours(0, 0, 0, 0);
+
+  const upcomingConfirmed = await Booking.exists({
+    listing: listing._id,
+    status: 'confirmed',
+    checkOut: { $gte: todayStart },
+  });
+
+  if (upcomingConfirmed) {
+    res.status(409);
+    throw new Error('Cannot delete a listing with upcoming confirmed bookings');
+  }
+
+  // Soft delete: mark inactive instead of removing the document.
+  // Existing bookings and reviews are left untouched so guests can still
+  // see their booking history with the listing details populated.
+  listing.isActive = false;
+  await listing.save();
+
   res.json({ message: 'Listing deleted' });
 });
 
