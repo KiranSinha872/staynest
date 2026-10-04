@@ -1,9 +1,10 @@
 import { useEffect, useState } from 'react';
 import api, { getErrorMessage } from '../api/client.js';
 import ListingCard from '../components/ListingCard.jsx';
-import Loader from '../components/Loader.jsx';
+import SkeletonCard from '../components/SkeletonCard.jsx';
 import { STAY_TYPES } from '../utils/format.js';
 
+const SKELETON_COUNT = 8;
 const initial = { city: '', type: '', guests: '', maxPrice: '' };
 
 export default function Home() {
@@ -53,7 +54,12 @@ export default function Home() {
 
       {error && <p className="error">{error}</p>}
       {loading ? (
-        <Loader />
+        <div className="grid" aria-busy="true">
+          <span className="sr-only">Loading stays</span>
+          {Array.from({ length: SKELETON_COUNT }, (_, i) => (
+            <SkeletonCard key={i} />
+          ))}
+        </div>
       ) : listings.length === 0 ? (
         <p className="muted">No stays match your search.</p>
       ) : (
